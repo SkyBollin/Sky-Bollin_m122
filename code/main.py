@@ -9,6 +9,7 @@ from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from email.utils import formataddr
 
+import matplotlib.pyplot as plt
 import pandas as pd
 import requests
 from dotenv import load_dotenv
@@ -20,35 +21,55 @@ gmail_password = os.getenv('EMAIL_PASSWORD')
 send_to = os.getenv('EMAIL_DESTINATION')
 email_text = os.getenv('EMAIL_TEXT')
 subject = os.getenv('EMAIL_SUBJECT')
+
+stocks_to_get = json.loads(os.getenv('STOCK_TO_GET'))
 querystring = json.loads(os.getenv('QUERY'))
 headers = json.loads(os.getenv('HEADERS'))
+
 fileNameDate = datetime.today().strftime('%Y-%m-%d') + ".pdf"
 
+dataHandle = []
+
 def fetchData():
-    response = requests.request("GET", url, headers=headers, params=querystring)
-    print(response)
-    return response.json()
+    for stock in stocks_to_get:
+        querystring['symbol'] = stock
+        try:
+            response = requests.request("GET", url, headers=headers, params=querystring)
+            if (response.status_code >= 300):
+                exit(1)
+            dataHandle.append(response.json())
+        except Exception as e:
+            print("ERROR! response:" + response)
+            print(e)
+            exit(1)
 
-def parseData(data):
-    df = pd.DataFrame(data["Time Series (Daily)"])
-    df = df.transpose()[::-1]
-    df = pd.to_numeric(df['1. open'])
-    return df
-    
-def plotGraph(data):
-    plot = data.plot.line()
-    plot.set_xlabel('Datum')
-    plot.set_ylabel('Aktienwert')
-    plot.set_title('Aktienkurs von IBM')
-    return plot.get_figure()
+def parseData():
+    for i in range(len(dataHandle)):
+        dataHandle[i] = dataHandle[i]['Time Series (Daily)']
+        df = pd.DataFrame(dataHandle[i]).sort_index()
+        dataHandle[i] = df.transpose()[::-1]['1. open'].astype(float)
 
-def saveGraph(line):
-    line.savefig(fileNameDate, bbox_inches='tight', format='pdf')
+def plotGraph():
+    fig1 = plt.figure()
+    ax1 = fig1.add_subplot()
+
+    for i in range(len(dataHandle)):
+        ax1.plot(dataHandle[i])
+
+    #fig, host = plt.subplots()
+    #host.set_xlabel("Datum")
+    #host.set_ylabel("Wert")
+    #for i in range(len(dataHandle)):
+    #    client = host.twinx()
+    #    c, = client.plot(dataHandle[i], label=stocks_to_get[i])
+    #fig.tight_layout()
+
+def saveGraph():
+    plt.savefig(fileNameDate, format='pdf')
 
 def sendEmail():
-    server = smtplib.SMTP_SSL('smtp.sendgrid.net', 465, context = ssl.create_default_context())
+    server = smtplib.SMTP_SSL('smtp.gmail.com', 465)
     server.ehlo()
-    server.login("apikey", "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")
 
     msg = MIMEMultipart('alternative')
     msg['From'] = formataddr((str(Header('Weekly Stock Market', 'utf-8')), 'umfrage.ny.test@gmail.com'))
@@ -59,12 +80,11 @@ def sendEmail():
     
     server.close()
 
-
 def start():
-    data = fetchData()
-    #data = parseData(data)
-    #line = plotGraph(data)
-    #saveGraph(line)
+    fetchData()
+    parseData()
+    plotGraph()
+    saveGraph()
     #sendEmail()
     
 def log(toLog):
